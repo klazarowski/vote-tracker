@@ -74,4 +74,9 @@ def process(year, roll, root):
     for rv in root.iter("recorded-vote"):
         leg = rv.find("legislator")
         m = {}
-        m["id"] =
+        m["id"] = leg.get("name-id")
+        m["name"] = leg.get("unaccented-name") or leg.text
+        m["party"] = leg.get("party")
+        m["state"] = leg.get("state")
+        m["vote"] = rv.findtext("vote", "")
+        members.append(m)
