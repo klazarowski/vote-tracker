@@ -22,7 +22,10 @@ def fetch(year, roll):
     req = urllib.request.Request(url, headers={"User-Agent": "vote-tracker"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return ET.fromstring(r.read())
+                    root = ET.fromstring(r.read())
+            for el in root.iter():
+                if "}" in el.tag: el.tag = el.tag.split("}", 1)[1]
+            return root
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return None
