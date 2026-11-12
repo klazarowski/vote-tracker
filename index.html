@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>House vote tracker</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;padding:24px;background:#111;color:#eee}
+h1{margin:0 0 4px;font-size:26px} h2{font-size:18px;margin:24px 0 8px}
+.sub{color:#999;margin-bottom:12px} label{color:#bbb;font-size:14px}
+.grid{display:grid;grid-template-columns:2fr 1fr;gap:32px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #2a2a2a}
+th{color:#999;font-weight:500}
+.defection{color:#ff8a65}.absence{color:#90a4ae}.D{color:#64b5f6}.R{color:#e57373}.I{color:#ba68c8}
+.tag{font-size:11px;background:#5d4037;color:#ffccbc;padding:1px 6px;border-radius:4px;margin-left:6px}
+</style>
+</head>
+<body>
+<h1>House vote tracker</h1>
+<div class="sub" id="updated">Loading…</div>
+<label><input type="checkbox" id="tier1" checked> Substantive votes only</label>
+<label style="margin-left:16px"><input type="checkbox" id="hideAbs"> Hide absences</label>
+<div class="grid">
+  <section><h2>Recent flags</h2>
+    <table><thead><tr><th>Date</th><th>Member</th><th>Flag</th><th>Vote on</th><th>Party unity</th></tr></thead>
+    <tbody id="flags"></tbody></table></section>
+  <section><h2>Most defections</h2>
+    <table><thead><tr><th>Member</th><th>Defections</th><th>Absences</th></tr></thead>
+    <tbody id="leaders"></tbody></table></section>
+</div>
+<script>
+let log = [];
+function cell(tr, text, cls) {
+  const td = document.createElement('td');
+  td.textContent = text;
+  if (cls) td.className = cls;
+  tr.appendChild(td);
+  return td;
+}
+async function load() {
+  const r = await fetch('data/log.json?t=' + Date.now());
+  log = r.ok ? await r.json() : [];
+  const s = await fetch('data/state.json?t=' + Date.now());
+  if (s.ok) {
+    const st = await s.json();
+    document.getElementById('updated').textContent =
+      'Last checked ' + new Date(st.checked).toLocaleString() + ' · through roll call ' + st.last_roll;
+  }
+  render();
+}
+function render() {
+  const t1 = document.getElementById('tier1').checked;
+  const hideAbs = document.getElementById('hideAbs').checked;
+  const rows = log.filter(e => !t1 || e.tier === 1);
+  const recent = rows.filter(e => !hideAbs || e.type === 'defection')
+    .sort((a, b) => b.year - a.year || b.roll - a.roll).slice(0, 60);
+  const flags = document.getElementById('flags');
+  flags.innerHTML = '';
+  for (const e of recent) {
+    const tr = document.createElement('tr');
+    cell(tr, e.date);
+    cell(tr, `${e.name} (${e.party}-${e.state})`, e.party);
+    cell(tr, e.type === 'defection' ? 'Defection' : e.vote, e.type);
+    const td = cell(tr, `${e.bill} · ${e.question}`);
+    if (e.impeachment) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = 'Impeachment'; td.appendChild(t); }
+    cell(tr, e.type === 'defection' ? `${e.unity_pct}% voted ${e.party_side}` : '');
+    flags.appendChild(tr);
+  }
+  const agg = {};
+  for (const e of rows) {
+    const a = agg[e.id] ||= { label: `${e.name} (${e.party}-${e.state})`, party: e.party, d: 0, a: 0 };
+    e.type === 'defection' ? a.d++ : a.a++;
+  }
+  const leaders = document.getElementById('leaders');
+  leaders.innerHTML = '';
+  for (const a of Object.values(agg).sort((x, y) => y.d - x.d).slice(0, 20)) {
+    const tr = document.createElement('tr');
+    cell(tr, a.label, a.party); cell(tr, a.d); cell(tr, a.a);
+    leaders.appendChild(tr);
+  }
+}
+document.getElementById('tier1').onchange = render;
+document.getElementById('hideAbs').onchange = render;
+load();
+setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>
