@@ -42,7 +42,11 @@ def tier(question, desc):
     return 1
 
 def process(year, roll, root):
-    meta = root.find("vote-metadata")
+        meta = root.find(".//vote-metadata")
+    if meta is None:
+        print("Unexpected format for roll", roll, "- root tag:", root.tag)
+        print(ET.tostring(root)[:800])
+        raise SystemExit(1)
     question = meta.findtext("vote-question", "")
     desc = meta.findtext("vote-desc", "")
     info = {"roll": roll, "year": year, "date": meta.findtext("action-date", ""),
