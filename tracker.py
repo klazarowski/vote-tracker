@@ -80,3 +80,70 @@ def process(year, roll, root):
         m["state"] = leg.get("state")
         m["vote"] = rv.findtext("vote", "")
         members.append(m)
+    tally = {}
+    for m in members:
+        c = CAUCUS.get(m["party"], m["party"])
+        t = tally.setdefault(c, {"yes": 0, "no": 0})
+        if m["vote"] in YES:
+            t["yes"] += 1
+        elif m["vote"] in NO:
+            t["no"] += 1
+
+    position = {}
+    for c, t in tally.items():
+        total = t["yes"] + t["no"]
+        if total == 0 or t["yes"] == t["no"]:
+            position[c] = (None, 0)
+        else:
+            side = "yes" if t["yes"] > t["no"] else "no"
+            position[c] = (side, round(100 * max(t["yes"], t["no"]) / total, 1))
+
+    entries = []
+    if info["tier"] == 3:
+        return info, entries
+    for m in members:
+        c = CAUCUS.get(m["party"], m["party"])
+        side, unity = position[c]
+        base = dict(info)
+        base.update(m)
+        base["unity_pct"] = unity
+        base["party_side"] = side
+        if m["vote"] not in YES and m["vote"] not in NO:
+            base["type"] = "absence"
+            entries.append(base)
+        elif side is None or unity < THRESHOLD:
+            continue
+        else:
+            member_side = "yes" if m["vote"] in YES else "no"
+            if member_side != side:
+                base["type"] = "defection"
+                entries.append(base)
+    return info, entries
+
+def main():
+    os.makedirs(DATA, exist_ok=True)
+    year = datetime.date.today().year
+    state = load("state.json", {"year": year, "last_roll": 0})
+    if state["year"] != year:
+        state = {"year": year, "last_roll": 0}
+    votes = load("votes.json", [])
+    log = load("log.json", [])
+    roll = state["last_roll"] + 1
+    while True:
+        root = fetch(year, roll)
+        if root is None:
+            break
+        info, entries = process(year, roll, root)
+        votes.append(info)
+        log.extend(entries)
+        state["last_roll"] = roll
+        roll += 1
+        time.sleep(0.3)
+    state["checked"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    save("state.json", state)
+    save("votes.json", votes)
+    save("log.json", log)
+
+
+if __name__ == "__main__":
+    main()
