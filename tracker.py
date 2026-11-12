@@ -36,6 +36,8 @@ def fetch(year, roll):
     for el in root.iter():
         if "}" in el.tag:
             el.tag = el.tag.split("}", 1)[1]
+    if root.find(".//vote-metadata") is None:
+        return None
     return root
 
 
