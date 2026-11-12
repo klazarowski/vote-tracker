@@ -14,6 +14,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: python tracker.py
+      - run: python senate.py
+        continue-on-error: true
       - run: |
           git config user.name "vote-tracker-bot"
           git config user.email "actions@users.noreply.github.com"
