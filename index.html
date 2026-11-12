@@ -3,22 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>House vote tracker</title>
+<title>Congress vote tracker</title>
 <style>
 body{font-family:system-ui,sans-serif;margin:0;padding:24px;background:#111;color:#eee}
 h1{margin:0 0 4px;font-size:26px} h2{font-size:18px;margin:24px 0 8px}
-.sub{color:#999;margin-bottom:12px} label{color:#bbb;font-size:14px}
+.sub{color:#999;margin-bottom:12px;font-size:14px} label{color:#bbb;font-size:14px}
+.tabs{margin:8px 0 12px}
+.tabs button{background:#222;color:#ccc;border:1px solid #444;padding:6px 14px;border-radius:6px;margin-right:6px;cursor:pointer;font-size:14px}
+.tabs button.on{background:#eee;color:#111;border-color:#eee}
 .grid{display:grid;grid-template-columns:2fr 1fr;gap:32px}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #2a2a2a}
 th{color:#999;font-weight:500}
 .defection{color:#ff8a65}.absence{color:#90a4ae}.D{color:#64b5f6}.R{color:#e57373}.I{color:#ba68c8}
+.ch{font-size:11px;padding:1px 6px;border-radius:4px;margin-right:6px;font-weight:600}
+.ch.house{background:#1b3a2f;color:#8fe3bd}.ch.senate{background:#3a2f1b;color:#f2c97d}
 .tag{font-size:11px;background:#5d4037;color:#ffccbc;padding:1px 6px;border-radius:4px;margin-left:6px}
+@media (max-width:800px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<h1>House vote tracker</h1>
+<h1 id="title">Congress vote tracker</h1>
 <div class="sub" id="updated">Loading…</div>
+<div class="tabs">
+  <button data-c="both" class="on">Both</button>
+  <button data-c="house">House</button>
+  <button data-c="senate">Senate</button>
+</div>
 <label><input type="checkbox" id="tier1" checked> Substantive votes only</label>
 <label style="margin-left:16px"><input type="checkbox" id="hideAbs"> Hide absences</label>
 <div class="grid">
@@ -31,6 +42,7 @@ th{color:#999;font-weight:500}
 </div>
 <script>
 let log = [];
+let chamber = 'both';
 function cell(tr, text, cls) {
   const td = document.createElement('td');
   td.textContent = text;
@@ -38,48 +50,91 @@ function cell(tr, text, cls) {
   tr.appendChild(td);
   return td;
 }
+function who(td, e) {
+  const b = document.createElement('span');
+  b.className = 'ch ' + e.chamber;
+  b.textContent = e.chamber === 'house' ? 'House' : 'Senate';
+  td.appendChild(b);
+  const n = document.createElement('span');
+  n.className = e.party;
+  n.textContent = `${e.name} (${e.party}-${e.state})`;
+  td.appendChild(n);
+}
+function when(e) {
+  if (e.chamber === 'senate') return Date.parse(e.date) || 0;
+  const p = e.date.split('-');
+  return Date.parse(p[1] + ' ' + p[0] + ', ' + p[2]) || 0;
+}
+async function getJSON(path) {
+  try {
+    const r = await fetch(path + '?t=' + Date.now());
+    return r.ok ? await r.json() : null;
+  } catch (err) { return null; }
+}
 async function load() {
-  const r = await fetch('data/log.json?t=' + Date.now());
-  log = r.ok ? await r.json() : [];
-  const s = await fetch('data/state.json?t=' + Date.now());
-  if (s.ok) {
-    const st = await s.json();
-    document.getElementById('updated').textContent =
-      'Last checked ' + new Date(st.checked).toLocaleString() + ' · through roll call ' + st.last_roll;
+  const h = (await getJSON('data/log.json')) || [];
+  const s = (await getJSON('data/senate_log.json')) || [];
+  h.forEach(e => { e.chamber = 'house'; });
+  log = h.concat(s);
+  const hs = await getJSON('data/state.json');
+  const ss = await getJSON('data/senate_state.json');
+  const parts = [];
+  if (hs) parts.push('House through roll call ' + hs.last_roll);
+  if (ss) parts.push('Senate through vote ' + ss.last_roll);
+  const times = [hs, ss].filter(Boolean).map(x => new Date(x.checked)).sort((a, b) => b - a);
+  if (times.length) {
+    document.getElementById('updated').textContent = 'Last checked ' + times[0].toLocaleString() + ' · ' + parts.join(' · ');
   }
   render();
 }
 function render() {
   const t1 = document.getElementById('tier1').checked;
   const hideAbs = document.getElementById('hideAbs').checked;
-  const rows = log.filter(e => !t1 || e.tier === 1);
+  const rows = log.filter(e => (!t1 || e.tier === 1) && (chamber === 'both' || e.chamber === chamber));
   const recent = rows.filter(e => !hideAbs || e.type === 'defection')
-    .sort((a, b) => b.year - a.year || b.roll - a.roll).slice(0, 60);
+    .sort((a, b) => when(b) - when(a) || b.roll - a.roll).slice(0, 60);
   const flags = document.getElementById('flags');
   flags.innerHTML = '';
   for (const e of recent) {
     const tr = document.createElement('tr');
     cell(tr, e.date);
-    cell(tr, `${e.name} (${e.party}-${e.state})`, e.party);
+    who(cell(tr, ''), e);
     cell(tr, e.type === 'defection' ? 'Defection' : e.vote, e.type);
     const td = cell(tr, `${e.bill} · ${e.question}`);
-    if (e.impeachment) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = 'Impeachment'; td.appendChild(t); }
+    if (e.impeachment) {
+      const t = document.createElement('span');
+      t.className = 'tag';
+      t.textContent = 'Impeachment';
+      td.appendChild(t);
+    }
     cell(tr, e.type === 'defection' ? `${e.unity_pct}% voted ${e.party_side}` : '');
     flags.appendChild(tr);
   }
   const agg = {};
   for (const e of rows) {
-    const a = agg[e.id] ||= { label: `${e.name} (${e.party}-${e.state})`, party: e.party, d: 0, a: 0 };
-    e.type === 'defection' ? a.d++ : a.a++;
+    const key = e.chamber + e.id;
+    const a = agg[key] ||= { e: e, d: 0, a: 0 };
+    if (e.type === 'defection') a.d++; else a.a++;
   }
   const leaders = document.getElementById('leaders');
   leaders.innerHTML = '';
   for (const a of Object.values(agg).sort((x, y) => y.d - x.d).slice(0, 20)) {
     const tr = document.createElement('tr');
-    cell(tr, a.label, a.party); cell(tr, a.d); cell(tr, a.a);
+    who(cell(tr, ''), a.e);
+    cell(tr, a.d);
+    cell(tr, a.a);
     leaders.appendChild(tr);
   }
 }
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.onclick = () => {
+    chamber = btn.dataset.c;
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === btn));
+    const names = { both: 'Congress', house: 'House', senate: 'Senate' };
+    document.getElementById('title').textContent = names[chamber] + ' vote tracker';
+    render();
+  };
+});
 document.getElementById('tier1').onchange = render;
 document.getElementById('hideAbs').onchange = render;
 load();
